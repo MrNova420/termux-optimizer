@@ -88,12 +88,12 @@ fi
 
 # Check network status
 print_status "Network Analysis:"
-NETWORK_TYPE=$(termux-telephony-deviceinfo 2>/dev/null | grep "network_type" | cut -d'"' -f4 || echo "Unknown")
-ping -c 1 8.8.8.8 >/dev/null 2>&1 && INTERNET_STATUS="Connected" || INTERNET_STATUS="Disconnected"
+NETWORK_TYPE=$(timeout 2 termux-telephony-deviceinfo 2>/dev/null | grep "network_type" | cut -d'"' -f4 || echo "Unknown")
+timeout 2 ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1 && INTERNET_STATUS="Connected" || INTERNET_STATUS="Disconnected"
 echo "  • Status: $INTERNET_STATUS"
-echo "  • Type: $NETWORK_TYPE"
+[ "$NETWORK_TYPE" != "Unknown" ] && echo "  • Type: $NETWORK_TYPE"
 
-sleep 2
+sleep 1
 
 # Check if running in Termux
 if [ ! -d "/data/data/com.termux" ]; then
@@ -280,12 +280,21 @@ for dns_entry in "${DNS_SERVERS[@]}"; do
     dns=$(echo $dns_entry | cut -d: -f1)
     name=$(echo $dns_entry | cut -d: -f2)
     
-    time=$(ping -c 1 -W 1 $dns 2>/dev/null | grep 'time=' | cut -d'=' -f4 | cut -d' ' -f1 || echo "999")
+    time=$(timeout 2 ping -c 1 -W 1 $dns 2>/dev/null | grep 'time=' | cut -d'=' -f4 | cut -d' ' -f1 || echo "999")
     
-    if (( $(echo "$time < $FASTEST_TIME" | bc -l 2>/dev/null || echo 0) )); then
-        FASTEST_TIME=$time
-        FASTEST_DNS=$dns
-        FASTEST_NAME=$name
+    if command -v bc >/dev/null 2>&1; then
+        if (( $(echo "$time < $FASTEST_TIME" | bc -l 2>/dev/null || echo 0) )); then
+            FASTEST_TIME=$time
+            FASTEST_DNS=$dns
+            FASTEST_NAME=$name
+        fi
+    else
+        # Fallback without bc
+        if [ "${time%%.*}" -lt "${FASTEST_TIME%%.*}" ] 2>/dev/null; then
+            FASTEST_TIME=$time
+            FASTEST_DNS=$dns
+            FASTEST_NAME=$name
+        fi
     fi
     echo "  $name ($dns): ${time}ms"
 done
@@ -311,11 +320,11 @@ while true; do
     
     # Connection speed test
     if command -v termux-telephony-deviceinfo &>/dev/null; then
-        echo "Network Type: $(termux-telephony-deviceinfo 2>/dev/null | grep network_type | cut -d'"' -f4 || echo 'Unknown')"
+        echo "Network Type: $(timeout 2 termux-telephony-deviceinfo 2>/dev/null | grep network_type | cut -d'"' -f4 || echo 'Unknown')"
     fi
     
     # Ping test
-    ping_result=$(ping -c 1 -W 1 8.8.8.8 2>/dev/null | grep 'time=' | cut -d'=' -f4 | cut -d' ' -f1 || echo "timeout")
+    ping_result=$(timeout 2 ping -c 1 -W 1 8.8.8.8 2>/dev/null | grep 'time=' | cut -d'=' -f4 | cut -d' ' -f1 || echo "timeout")
     echo "Latency: ${ping_result}ms"
     
     # Active connections
@@ -632,10 +641,10 @@ echo ""
 
 # Network Status
 echo "🌐 Network Status:"
-if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-    LATENCY=$(ping -c 1 8.8.8.8 2>/dev/null | grep 'time=' | cut -d'=' -f4 | cut -d' ' -f1)
+if timeout 2 ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
+    LATENCY=$(timeout 2 ping -c 1 -W 1 8.8.8.8 2>/dev/null | grep 'time=' | cut -d'=' -f4 | cut -d' ' -f1)
     echo "  Connection: Online (${LATENCY}ms latency)"
-    PUBLIC_IP=$(curl -s --max-time 3 ifconfig.me 2>/dev/null || echo "Unknown")
+    PUBLIC_IP=$(timeout 3 curl -s --max-time 3 ifconfig.me 2>/dev/null || echo "Unknown")
     echo "  Public IP: $PUBLIC_IP"
 else
     echo "  Connection: Offline"
@@ -645,10 +654,13 @@ echo ""
 # Battery Status (if Termux:API installed)
 if command -v termux-battery-status &>/dev/null; then
     echo "🔋 Battery:"
-    BATTERY=$(termux-battery-status 2>/dev/null | grep percentage | cut -d: -f2 | tr -d ' ,"')
-    STATUS=$(termux-battery-status 2>/dev/null | grep status | cut -d'"' -f4)
-    echo "  Level: ${BATTERY}%"
-    echo "  Status: $STATUS"
+    BATTERY_INFO=$(timeout 2 termux-battery-status 2>/dev/null)
+    if [ -n "$BATTERY_INFO" ]; then
+        BATTERY=$(echo "$BATTERY_INFO" | grep percentage | cut -d: -f2 | tr -d ' ,"')
+        STATUS=$(echo "$BATTERY_INFO" | grep status | cut -d'"' -f4)
+        echo "  Level: ${BATTERY}%"
+        echo "  Status: $STATUS"
+    fi
     echo ""
 fi
 

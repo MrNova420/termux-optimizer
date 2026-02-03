@@ -17,6 +17,28 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Function to print status
+print_status() {
+    echo -e "${BLUE}[*]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[✓]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[✗]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[!]${NC} $1"
+}
+
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 # Banner
 clear
 echo -e "${CYAN}"
@@ -38,8 +60,8 @@ echo -e "\n${PURPLE}═══ ANALYZING DEVICE ═══${NC}"
 TOTAL_RAM=$(free -m | awk '/^Mem:/ {print $2}')
 AVAILABLE_RAM=$(free -m | awk '/^Mem:/ {print $7}')
 CPU_CORES=$(nproc)
-STORAGE_TOTAL=$(df -BG "$HOME" | awk 'NR==2 {print $2}' | sed 's/G//')
-STORAGE_AVAIL=$(df -BG "$HOME" | awk 'NR==2 {print $4}' | sed 's/G//')
+STORAGE_TOTAL=$(df -h "$HOME" | awk 'NR==2 {print $2}' | sed 's/G//')
+STORAGE_AVAIL=$(df -h "$HOME" | awk 'NR==2 {print $4}' | sed 's/G//')
 ANDROID_VERSION=$(getprop ro.build.version.release 2>/dev/null || echo "Unknown")
 DEVICE_MODEL=$(getprop ro.product.model 2>/dev/null || echo "Unknown")
 ARCHITECTURE=$(uname -m)
@@ -78,28 +100,6 @@ if [ ! -d "/data/data/com.termux" ]; then
     echo -e "${RED}Error: This script must be run in Termux!${NC}"
     exit 1
 fi
-
-# Function to print status
-print_status() {
-    echo -e "${BLUE}[*]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[!]${NC} $1"
-}
-
-# Function to check if command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
 
 # ============================================
 # STEP 1: GRANT STORAGE PERMISSION

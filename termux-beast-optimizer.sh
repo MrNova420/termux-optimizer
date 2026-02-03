@@ -6,7 +6,9 @@
 # Full Device + Network + Performance Optimization
 # ============================================
 
+# Exit on error but handle it gracefully
 set -e
+trap 'echo -e "\n${RED}Script interrupted. Run again to continue.${NC}"; exit 1' INT TERM
 
 # Colors for output
 RED='\033[0;31m'
@@ -95,10 +97,14 @@ echo "  • Status: $INTERNET_STATUS"
 
 sleep 1
 
-# Check if running in Termux
-if [ ! -d "/data/data/com.termux" ]; then
-    echo -e "${RED}Error: This script must be run in Termux!${NC}"
-    exit 1
+# Check if running in Termux (relaxed check)
+if [ ! -d "/data/data/com.termux" ] && [ -z "$PREFIX" ]; then
+    print_warning "Warning: This script is designed for Termux"
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
 fi
 
 # ============================================
@@ -107,9 +113,15 @@ fi
 echo -e "\n${PURPLE}═══ STEP 1: Storage Access ═══${NC}"
 print_status "Setting up storage access..."
 if [ ! -d "$HOME/storage" ]; then
-    termux-setup-storage
-    sleep 2
-    print_success "Storage access configured"
+    if command_exists termux-setup-storage; then
+        termux-setup-storage 2>/dev/null || print_warning "Storage setup skipped (grant permission manually)"
+        sleep 2
+    fi
+    if [ -d "$HOME/storage" ]; then
+        print_success "Storage access configured"
+    else
+        print_warning "Storage access not configured (optional)"
+    fi
 else
     print_success "Storage access already configured"
 fi
@@ -119,7 +131,9 @@ fi
 # ============================================
 echo -e "\n${PURPLE}═══ STEP 2: System Update ═══${NC}"
 print_status "Updating package repositories..."
-pkg update -y && pkg upgrade -y
+pkg update -y 2>&1 | grep -v "dpkg-deb\|Processing" || true
+print_status "Upgrading packages (this may take a few minutes)..."
+pkg upgrade -y 2>&1 | grep -v "dpkg-deb\|Processing" || true
 print_success "System updated successfully"
 
 # ============================================
@@ -148,13 +162,16 @@ ESSENTIAL_PACKAGES=(
 
 print_status "Installing essential packages..."
 for package in "${ESSENTIAL_PACKAGES[@]}"; do
-    if ! command_exists "$package"; then
-        print_status "Installing $package..."
-        pkg install -y "$package" 2>/dev/null || print_warning "Failed to install $package"
-    else
-        print_success "$package already installed"
+    if ! command_exists "$package" && ! pkg list-installed 2>/dev/null | grep -q "^$package/"; then
+        echo -n "  Installing $package... "
+        if pkg install -y "$package" >/dev/null 2>&1; then
+            echo "✓"
+        else
+            echo "skipped"
+        fi
     fi
 done
+print_success "Essential packages ready"
 
 # ============================================
 # STEP 4: DEVELOPMENT ENVIRONMENT
@@ -172,15 +189,18 @@ DEV_PACKAGES=(
     "build-essential"
 )
 
-print_status "Installing development tools..."
+print_status "Installing development tools (this may take a while)..."
 for package in "${DEV_PACKAGES[@]}"; do
     if ! command_exists "$package" && ! pkg list-installed 2>/dev/null | grep -q "^$package/"; then
-        print_status "Installing $package..."
-        pkg install -y "$package" 2>/dev/null || print_warning "Skipped $package (optional)"
-    else
-        print_success "$package ready"
+        echo -n "  Installing $package... "
+        if pkg install -y "$package" >/dev/null 2>&1; then
+            echo "✓"
+        else
+            echo "skipped"
+        fi
     fi
 done
+print_success "Development environment ready"
 
 # ============================================
 # STEP 5: NETWORKING & SECURITY TOOLS
@@ -200,10 +220,15 @@ NETWORK_PACKAGES=(
 print_status "Installing networking tools..."
 for package in "${NETWORK_PACKAGES[@]}"; do
     if ! pkg list-installed 2>/dev/null | grep -q "^$package/"; then
-        print_status "Installing $package..."
-        pkg install -y "$package" 2>/dev/null || print_warning "Skipped $package"
+        echo -n "  Installing $package... "
+        if pkg install -y "$package" >/dev/null 2>&1; then
+            echo "✓"
+        else
+            echo "skipped"
+        fi
     fi
 done
+print_success "Network tools ready"
 
 # ============================================
 # STEP 6: MULTIMEDIA & UTILITIES
@@ -219,8 +244,14 @@ MEDIA_PACKAGES=(
 
 print_status "Installing multimedia tools..."
 for package in "${MEDIA_PACKAGES[@]}"; do
-    pkg install -y "$package" 2>/dev/null || print_warning "Skipped $package"
+    echo -n "  Installing $package... "
+    if pkg install -y "$package" >/dev/null 2>&1; then
+        echo "✓"
+    else
+        echo "skipped"
+    fi
 done
+print_success "Multimedia tools ready"
 
 # ============================================
 # STEP 6.5: SMART MEMORY OPTIMIZATION
@@ -254,8 +285,9 @@ echo -e "\n${PURPLE}═══ STEP 6.6: Network Tuning ═══${NC}"
 
 print_status "Optimizing network settings..."
 
-# Install network optimization tools
-pkg install -y dnsmasq dnscrypt-proxy2 2>/dev/null || true
+# Install network optimization tools (optional)
+echo -n "  Installing network optimization tools... "
+pkg install -y dnscrypt-proxy2 >/dev/null 2>&1 && echo "✓" || echo "skipped"
 
 # Create DNS optimization script
 mkdir -p "$HOME/bin"
@@ -346,18 +378,22 @@ echo -e "\n${PURPLE}═══ STEP 7: Shell Customization ═══${NC}"
 
 # Install ZSH
 print_status "Installing ZSH shell..."
-pkg install -y zsh
+pkg install -y zsh >/dev/null 2>&1 || print_warning "ZSH installation failed"
 
 # Install Oh My ZSH
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
-    print_status "Installing Oh My ZSH..."
-    git clone https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh" --depth 1 2>/dev/null || print_warning "Oh My ZSH installation failed"
-    
-    # Create .zshrc if it doesn't exist
-    if [ ! -f "$HOME/.zshrc" ]; then
-        cp "$HOME/.oh-my-zsh/templates/zshrc.zsh-template" "$HOME/.zshrc" 2>/dev/null || true
+    print_status "Installing Oh My ZSH (this may take a minute)..."
+    if git clone https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh" --depth 1 >/dev/null 2>&1; then
+        # Create .zshrc if it doesn't exist
+        if [ ! -f "$HOME/.zshrc" ]; then
+            cp "$HOME/.oh-my-zsh/templates/zshrc.zsh-template" "$HOME/.zshrc" 2>/dev/null || true
+        fi
+        print_success "Oh My ZSH installed"
+    else
+        print_warning "Oh My ZSH installation failed (optional)"
     fi
-    print_success "Oh My ZSH installed"
+else
+    print_success "Oh My ZSH already installed"
 fi
 
 # Install useful plugins
@@ -366,12 +402,22 @@ ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 
 # zsh-autosuggestions
 if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
-    git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" --depth 1 2>/dev/null || true
+    echo -n "  Installing zsh-autosuggestions... "
+    if git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" --depth 1 >/dev/null 2>&1; then
+        echo "✓"
+    else
+        echo "skipped"
+    fi
 fi
 
 # zsh-syntax-highlighting
 if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" --depth 1 2>/dev/null || true
+    echo -n "  Installing zsh-syntax-highlighting... "
+    if git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" --depth 1 >/dev/null 2>&1; then
+        echo "✓"
+    else
+        echo "skipped"
+    fi
 fi
 
 # ============================================
@@ -381,24 +427,26 @@ echo -e "\n${PURPLE}═══ STEP 8: Python Setup ═══${NC}"
 
 if command_exists python; then
     print_status "Upgrading pip..."
-    python -m pip install --upgrade pip 2>/dev/null || true
+    python -m pip install --upgrade pip >/dev/null 2>&1 || true
     
     PYTHON_PACKAGES=(
         "requests"
         "beautifulsoup4"
-        "numpy"
-        "pandas"
-        "matplotlib"
-        "pillow"
-        "youtube-dl"
         "yt-dlp"
     )
     
-    print_status "Installing useful Python packages..."
+    print_status "Installing essential Python packages..."
     for package in "${PYTHON_PACKAGES[@]}"; do
-        python -m pip install "$package" 2>/dev/null || print_warning "Skipped $package"
+        echo -n "  Installing $package... "
+        if python -m pip install "$package" >/dev/null 2>&1; then
+            echo "✓"
+        else
+            echo "skipped"
+        fi
     done
     print_success "Python environment enhanced"
+else
+    print_warning "Python not found, skipping Python setup"
 fi
 
 # ============================================
@@ -408,9 +456,14 @@ echo -e "\n${PURPLE}═══ STEP 9: Node.js Setup ═══${NC}"
 
 if command_exists npm; then
     print_status "Installing useful Node.js packages..."
-    npm install -g npm@latest 2>/dev/null || true
-    npm install -g tldr http-server json-server 2>/dev/null || print_warning "Some npm packages skipped"
+    npm install -g npm@latest >/dev/null 2>&1 || true
+    echo -n "  Installing tldr... "
+    npm install -g tldr >/dev/null 2>&1 && echo "✓" || echo "skipped"
+    echo -n "  Installing http-server... "
+    npm install -g http-server >/dev/null 2>&1 && echo "✓" || echo "skipped"
     print_success "Node.js environment enhanced"
+else
+    print_warning "Node.js not found, skipping npm setup"
 fi
 
 # ============================================
@@ -763,11 +816,15 @@ echo -e "\n${PURPLE}═══ STEP 13: Auto-Maintenance Setup ═══${NC}"
 
 if ! command_exists cronie; then
     print_status "Installing task scheduler..."
-    pkg install -y cronie
+    pkg install -y cronie >/dev/null 2>&1 || print_warning "Cronie installation failed"
 fi
 
 # Setup automatic maintenance tasks
-print_status "Configuring automatic optimization tasks..."
+if command_exists crontab; then
+    print_status "Configuring automatic optimization tasks..."
+else
+    print_warning "Cron not available, skipping auto-maintenance"
+fi
 
 # Create maintenance script
 cat > "$HOME/bin/auto-maintenance" << 'MAINT'
@@ -791,11 +848,14 @@ MAINT
 chmod +x "$HOME/bin/auto-maintenance"
 
 # Setup cron jobs for automatic maintenance
-(crontab -l 2>/dev/null || true; echo "# Auto-maintenance tasks") | crontab - 2>/dev/null || true
-(crontab -l 2>/dev/null || true; echo "0 */6 * * * $HOME/bin/auto-maintenance") | crontab - 2>/dev/null || true
-(crontab -l 2>/dev/null || true; echo "0 3 * * * $HOME/bin/cleanup") | crontab - 2>/dev/null || true
-
-print_success "Auto-maintenance scheduled (every 6 hours)"
+if command_exists crontab; then
+    (crontab -l 2>/dev/null || true; echo "# Auto-maintenance tasks") | crontab - 2>/dev/null || true
+    (crontab -l 2>/dev/null || true; echo "0 */6 * * * $HOME/bin/auto-maintenance") | crontab - 2>/dev/null || true
+    (crontab -l 2>/dev/null || true; echo "0 3 * * * $HOME/bin/cleanup") | crontab - 2>/dev/null || true
+    print_success "Auto-maintenance scheduled (every 6 hours)"
+else
+    print_warning "Auto-maintenance not scheduled (cron not available)"
+fi
 
 # ============================================
 # STEP 14: SMART STARTUP SCRIPT
@@ -853,8 +913,12 @@ print_success "Smart startup configured"
 echo -e "\n${PURPLE}═══ STEP 15: Final Tuning ═══${NC}"
 
 print_status "Running initial optimization..."
-$HOME/bin/performance-tune 2>/dev/null || true
-$HOME/bin/auto-cleanup 2>/dev/null || true
+if [ -x "$HOME/bin/performance-tune" ]; then
+    $HOME/bin/performance-tune 2>/dev/null || true
+fi
+if [ -x "$HOME/bin/auto-cleanup" ]; then
+    $HOME/bin/auto-cleanup 2>/dev/null || true
+fi
 
 # Create quick access alias
 cat >> "$HOME/.bashrc" << 'QUICK'

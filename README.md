@@ -77,34 +77,32 @@ A comprehensive, intelligent optimization script for Termux on unrooted Android 
 
 ## 🚀 Installation
 
-### Quick Install (One-Line)
+### Quick Install (One-Line) - Recommended
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/termux-optimizer/main/termux-beast-optimizer.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/termux-optimizer/main/install.sh)
 ```
 
-### Manual Installation
+### Alternative Methods
 
-1. **Clone the repository:**
+**Method 1: Direct Download**
 ```bash
-cd ~
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/termux-optimizer/main/termux-beast-optimizer.sh -o optimizer.sh
+chmod +x optimizer.sh
+./optimizer.sh
+```
+
+**Method 2: Git Clone**
+```bash
+pkg install git
 git clone https://github.com/YOUR_USERNAME/termux-optimizer.git
 cd termux-optimizer
+bash termux-beast-optimizer.sh
 ```
 
-2. **Make the script executable:**
+**Method 3: Manual Download**
 ```bash
-chmod +x termux-beast-optimizer.sh
-```
-
-3. **Run the optimizer:**
-```bash
-./termux-beast-optimizer.sh
-```
-
-### Direct Download
-
-```bash
+pkg install wget
 wget https://raw.githubusercontent.com/YOUR_USERNAME/termux-optimizer/main/termux-beast-optimizer.sh
 chmod +x termux-beast-optimizer.sh
 ./termux-beast-optimizer.sh
